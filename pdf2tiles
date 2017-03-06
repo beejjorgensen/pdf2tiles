@@ -1,0 +1,52 @@
+#!/bin/bash
+#
+# pdf2tiles
+#
+# Convert one or more GeoPDFs to tiles
+#
+# I hereby grant this code to the public domain.
+#
+# Brian "Beej Jorgensen" Hall <beej@beej.us>
+
+SCRIPT=$(basename $0)
+
+if [ $# -eq 0 ]; then
+	printf "usage: %s pdffile [pdffile...]\n" 1>&2
+	exit 1
+fi
+
+#
+# Exit with error
+#
+function errorExit {
+	printf "%s: %s\n" "$SCRIPT" "$1" 1>&2
+	exit 1
+}
+
+function finish {
+	rm -f "$outfile"
+}
+
+trap finish EXIT
+
+for f in $*; do
+	infile="$f"
+	basefilename=$(basename ${infile%.*})  # strip extension
+	outfile="$basefilename".tif
+
+	printf "%s: processing %s\n" "$SCRIPT" "$infile"
+
+	# Test for USFS or USGS map
+
+	if gdalinfo "$infile" -mdd layers | grep -q "LAYER_.*_NAME=Quadrangle"; then
+		outsubdir=usfs
+	elif gdalinfo "$infile" -mdd layers | grep -q "LAYER_.*_NAME=Map_Frame"; then
+		outsubdir=usgs
+	else
+		errorExit "can't determine map type"
+	fi
+
+	pdf2gt "$infile"
+	gt2tiles "$outfile" "$outsubdir"
+done
+

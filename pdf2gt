@@ -1,0 +1,108 @@
+#!/bin/bash
+#
+# pdf2gt
+#
+# Convert a PDF to a GeoTIFF
+# Accepts USGS or USFS maps as input
+#
+# tms: http://127.0.0.1/{zoom}/{x}/{-y}.png
+#
+# Convert one or more GeoPDFs to tiles
+#
+# I hereby grant this code to the public domain.
+#
+# Brian "Beej Jorgensen" Hall <beej@beej.us>
+
+CLIP=true
+DPI=150  # TODO changing this will break the cropping rects, below
+
+#
+# Exit with error
+#
+function errorExit {
+	printf "%s: %s\n" "$SCRIPT" "$1" 1>&2
+	exit 1
+}
+
+#
+# Info message
+#
+function info {
+	printf "%s: %s\n" "$SCRIPT" "$1"
+}
+
+#
+# Handle an exit
+#
+function finish {
+	rm -f $tmpname
+}
+
+SCRIPT=$(basename $0)
+
+# Check usage
+
+if [ $# -ne 1 ]; then
+	printf "usage: %s pdffile\n" "$SCRIPT" 1>&2
+	exit 1
+fi
+
+# Globals
+
+infile="$1"
+basefilename=$(basename ${infile%.*})  # strip extension
+outfilename="$basefilename".tif
+tmpname="${basefilename}.$$.tmp"
+
+trap finish EXIT
+
+# Test for USFS or USGS map
+
+if gdalinfo "$infile" -mdd layers | grep -q "LAYER_.*_NAME=Quadrangle"; then
+	type=USFS
+	layer=Quadrangle
+elif gdalinfo "$infile" -mdd layers | grep -q "LAYER_.*_NAME=Map_Frame"; then
+	type=USGS
+	layer=Map_Frame
+else
+	errorExit "can't determine map type"
+fi
+
+info "detected $type map"
+
+# Set up the clipping region
+#
+# These cropping rects are obtained by taking the uncropped output
+# of gdal_translate, below, and manually measuring (in GIMP) the
+# pixel values of the area to be cropped. x y width height
+#
+# TODO make these values are DPI-independent
+
+if [ $CLIP = 'true' ]; then
+	info "setting clipping region"
+	case $type in
+		USFS) srcwin="-srcwin 399 189 2463 3417";;  # at 150 DPI
+		USGS) srcwin="-srcwin 475 377 2463 3415";;  # at 150 DPI
+	esac
+fi
+
+# First pass to make the GeoTIFF
+
+info "generating GeoTIFF"
+
+gdal_translate "$infile" "$tmpname" \
+	--config GDAL_PDF_LAYERS "$layer" \
+	--config GDAL_PDF_BANDS 3 \
+	--config GDAL_PDF_DPI $DPI \
+	$srcwin
+
+# Second pass to add JPEG compression
+
+info "JPEG compressing"
+
+gdal_translate \
+	-co COMPRESS=JPEG \
+	-co PHOTOMETRIC=ycbcr \
+	"$tmpname" "$outfilename"
+
+info "$outfilename complete"

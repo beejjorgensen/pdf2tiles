@@ -1,0 +1,90 @@
+#!/bin/bash
+#
+# gt2tiles
+#
+# Convert a GeoTIFF to tiles
+#
+# I hereby grant this code to the public domain.
+#
+# Brian "Beej Jorgensen" Hall <beej@beej.us>
+
+SCRIPT=$(basename $0)
+
+BASEDIR=~/public_html/"$SCRIPT"/
+
+ZOOMS="1-15"
+
+#
+# Exit with error
+#
+function errorExit {
+	printf "%s: %s\n" "$SCRIPT" "$1" 1>&2
+	exit 1
+}
+
+#
+# Info message
+#
+function info {
+	printf "%s: %s\n" "$SCRIPT" "$1"
+}
+
+#
+# Handle an exit
+#
+function finish {
+	rm -rf "$tmpdir" "$tmppng"
+}
+
+trap finish EXIT
+
+if [ $# -ne 2 ]; then
+	printf "usage: %s geotiff subdir\n" 1>&2
+	exit 1
+fi
+
+infile="$1"
+outsubdir="$2"
+
+# Set up temp files
+
+tmpdir="${SCRIPT}.$$.tmp"
+tmppng="${SCRIPT}.$$.tmp.png"
+
+mkdir -p "$tmpdir"
+
+# Make the tiles in a temp dir
+
+info "generating tiles"
+
+gdal2tiles.py --profile=mercator -z $ZOOMS -e "$infile" "$tmpdir"
+
+# Copy files over, merging duplicates
+
+outdir="${BASEDIR}/${outsubdir}"
+mkdir -p "$outdir"
+
+info "moving tiles"
+
+(
+	cd "$tmpdir"
+
+	for f in $(find . -name *.png); do
+		outf="${outdir}/${f}"
+
+		completedir=$(dirname "$outf")
+		mkdir -p "$completedir"
+
+		if [ -f "$outf" ]; then
+			# Duplicate file found, so merge the result
+			#info "merging tile $f"
+			composite "$f" "$outf" "$tmppng"
+			mv "$tmppng" "$outf"
+		else
+			# File does not exist in destination, so move it there
+			mv "$f" "$outf"
+		fi
+	done
+
+	cp *.html *.xml "${outdir}"
+)
