@@ -36,7 +36,7 @@ TMS Source URL
 --------------
 
 Your TMS source URL will be something like one of these, depending on
-your local webserver startup:
+your local webserver setup:
 
 	http://localhost:8000/{zoom}/{x}/{-y}.png
 
